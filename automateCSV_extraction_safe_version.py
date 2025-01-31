@@ -10,10 +10,31 @@ from googleapiclient.http import MediaFileUpload
 import os
 
 folder_id = 'FOLDER_ID'
+import pandas as pd
+import traceback
+from pathlib import Path
+
+async def convert_xls_to_xlsx(xls_path: Path) -> Path:
+    """Convert an .xls file to .xlsx format."""
+    try:
+        xlsx_path = xls_path.with_suffix(".xlsx")  # Change file extension to .xlsx
+
+        # Read the .xls file into a DataFrame
+        df = pd.read_excel(xls_path, engine="xlrd")  # Ensure xlrd is installed
+
+        # Write to .xlsx using openpyxl
+        df.to_excel(xlsx_path, index=False, engine="openpyxl")
+
+        print(f"✅ Converted {xls_path} to {xlsx_path}")
+        return xlsx_path
+    except Exception as e:
+        print(f"❌ Error converting {xls_path} to XLSX: {e}")
+        traceback.print_exc()
+        return None
 
 def authenticate_drive():
     creds = service_account.Credentials.from_service_account_file(
-        "service_account_json.json", 
+        "Service Account JSON.json", 
         scopes=["https://www.googleapis.com/auth/drive", "https://www.googleapis.com/auth/spreadsheets"]
     )
     return build("drive", "v3", credentials=creds)
@@ -22,6 +43,7 @@ def authenticate_drive():
 import traceback
 
 async def upload_to_drive(file_path: Path, folder_id: str):
+    """Upload an XLSX file to Google Drive."""
     try:
         drive_service = authenticate_drive()
 
@@ -29,9 +51,11 @@ async def upload_to_drive(file_path: Path, folder_id: str):
             "name": file_path.name,  # File name in Google Drive
             "parents": [folder_id],  # Folder ID in Google Drive
         }
-        media = MediaFileUpload(str(file_path), mimetype="text/csv")
+        media = MediaFileUpload(
+            str(file_path), 
+            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"  # Correct MIME type for .xlsx
+        )
 
-        # Upload the file
         uploaded_file = drive_service.files().create(
             body=file_metadata, media_body=media, fields="id"
         ).execute()
@@ -40,7 +64,8 @@ async def upload_to_drive(file_path: Path, folder_id: str):
 
     except Exception as e:
         print(f"❌ Error uploading {file_path}: {e}")
-        traceback.print_exc()  # Print detailed error traceback
+        traceback.print_exc()
+
 
 
 async def rename_csv(file_path: Path, facility_name: str):
@@ -51,9 +76,9 @@ async def rename_csv(file_path: Path, facility_name: str):
 
     # Format the timestamp as YYYYMMDD_HHMMSS
     timestamp = current_time_est.strftime("%Y%m%d_%H%M%S")
-
+    
     # Create the new file name
-    new_name = f"{timestamp}_{facility_name}.csv"
+    new_name = f"{timestamp}_{facility_name}.xls"
     new_path = file_path.parent / new_name
 
     try:
@@ -74,7 +99,6 @@ async def run_script_if_in_time_range():
     while True:
         now = datetime.now(est_tz)
         current_hour = now.hour
-
         if 9 <= current_hour < 22:  # Run only between 9 AM - 10 PM
             print(f"🟢 Running script at {now.strftime('%Y-%m-%d %I:%M %p EST')}")
             await automation_function()
@@ -113,7 +137,7 @@ async def automation_function():
         await page.goto("https://mybizaccount.fedex.com/")
         await page.click('input.credentials_input_submit')
         await page.wait_for_selector('#input28')
-        await page.fill('#input28', 'YOUR_USERNAME')
+        await page.fill('#input28', 'USERNAME')
         await page.fill('#input36', f'{script_password}')
         await page.click('input.button-primary')
         await page.wait_for_load_state('networkidle')
@@ -146,19 +170,26 @@ async def automation_function():
                     async with page.expect_download() as download_info:
                         await excel_locator.click()
                     download = await download_info.value
+
+                    # Save the file with .xls extension
                     safe_name = current_facility.replace('/', '_').replace(' ', '_')
-                    original_path = Path.cwd() / f"{safe_name}.csv"
+                    original_path = Path.cwd() / f"{safe_name}.xls"
                     await download.save_as(original_path)
                     print(f"Downloaded {original_path}")
+
+                    # Optional: You can add logic to rename or convert the file if needed
                     renamed_path = await rename_csv(original_path, safe_name)
-                    if renamed_path:  # Ensure renaming was successful
-                        await upload_to_drive(renamed_path, folder_id)  # Use renamed path
+                    xlsx_path = await convert_xls_to_xlsx(renamed_path)
+                    if xlsx_path:
+                        # Upload the .xlsx file to Google Drive
+                        await upload_to_drive(xlsx_path, folder_id)
                     else:
                         print(f"❌ Failed to rename file: {original_path}")
                 else:
                     print(f"No Excel icon found for {current_facility}")
             except Exception as e:
                 print(e)
+
 
 
             current_facility = 'ZECA-278'
@@ -173,6 +204,7 @@ async def automation_function():
             await page.keyboard.press("ArrowUp")
             await page.keyboard.press("Enter")
             time.sleep(5)
+            # Handle search
             try:
                 await page.click('button.selectionButton')
                 await page.wait_for_load_state('networkidle', timeout=60000)
@@ -184,20 +216,26 @@ async def automation_function():
                     async with page.expect_download() as download_info:
                         await excel_locator.click()
                     download = await download_info.value
+
+                    # Save the file with .xls extension
                     safe_name = current_facility.replace('/', '_').replace(' ', '_')
-                    original_path = Path.cwd() / f"{safe_name}.csv"
+                    original_path = Path.cwd() / f"{safe_name}.xls"
                     await download.save_as(original_path)
                     print(f"Downloaded {original_path}")
+
+                    # Optional: You can add logic to rename or convert the file if needed
                     renamed_path = await rename_csv(original_path, safe_name)
-                    if renamed_path:  # Ensure renaming was successful
-                        await upload_to_drive(renamed_path, folder_id)  # Use renamed path
+                    xlsx_path = await convert_xls_to_xlsx(renamed_path)
+                    if xlsx_path:
+                        # Upload the .xlsx file to Google Drive
+                        await upload_to_drive(xlsx_path, folder_id)
                     else:
                         print(f"❌ Failed to rename file: {original_path}")
-
                 else:
                     print(f"No Excel icon found for {current_facility}")
             except Exception as e:
                 print(e)
+
 
 
 
@@ -213,6 +251,7 @@ async def automation_function():
             await page.keyboard.press("ArrowDown")
             await page.keyboard.press("Enter")
             time.sleep(5)
+            # Handle search
             try:
                 await page.click('button.selectionButton')
                 await page.wait_for_load_state('networkidle', timeout=60000)
@@ -224,14 +263,19 @@ async def automation_function():
                     async with page.expect_download() as download_info:
                         await excel_locator.click()
                     download = await download_info.value
+
+                    # Save the file with .xls extension
                     safe_name = current_facility.replace('/', '_').replace(' ', '_')
-                    original_path = Path.cwd() / f"{safe_name}.csv"
+                    original_path = Path.cwd() / f"{safe_name}.xls"
                     await download.save_as(original_path)
-                    
                     print(f"Downloaded {original_path}")
+
+                    # Optional: You can add logic to rename or convert the file if needed
                     renamed_path = await rename_csv(original_path, safe_name)
-                    if renamed_path:  # Ensure renaming was successful
-                        await upload_to_drive(renamed_path, folder_id)  # Use renamed path
+                    xlsx_path = await convert_xls_to_xlsx(renamed_path)
+                    if xlsx_path:
+                        # Upload the .xlsx file to Google Drive
+                        await upload_to_drive(xlsx_path, folder_id)
                     else:
                         print(f"❌ Failed to rename file: {original_path}")
                 else:
@@ -243,4 +287,3 @@ async def automation_function():
     await browser.close()
 
 asyncio.run(run_script_if_in_time_range())
-
