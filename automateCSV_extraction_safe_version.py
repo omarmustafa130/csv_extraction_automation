@@ -13,25 +13,58 @@ folder_id = 'FOLDER_ID'
 import pandas as pd
 import traceback
 from pathlib import Path
+import sys
+# Existing utility functions
+from openpyxl import Workbook
+from openpyxl.utils import get_column_letter
+from openpyxl.worksheet.worksheet import Worksheet
+from xlrd import open_workbook
+import os
 
-async def convert_xls_to_xlsx(xls_path: Path) -> Path:
-    """Convert an .xls file to .xlsx format."""
+
+sys.stdout.reconfigure(encoding='utf-8')
+
+def convert_xls_to_xlsx(xls_path) -> Path:
+    """Convert an .xls file to .xlsx format while preserving merged formatting."""
     try:
-        xlsx_path = xls_path.with_suffix(".xlsx")  # Change file extension to .xlsx
+        xls_path = Path(xls_path)  # Ensure xls_path is a Path object
 
-        # Read the .xls file into a DataFrame
-        df = pd.read_excel(xls_path, engine="xlrd")  # Ensure xlrd is installed
+        if not xls_path.exists():
+            print(f"❌ File not found: {xls_path}")
+            return None  # Avoid processing non-existent file
 
-        # Write to .xlsx using openpyxl
-        df.to_excel(xlsx_path, index=False, engine="openpyxl")
+        xlsx_path = xls_path.with_suffix(".xlsx")
 
-        print(f"✅ Converted {xls_path} to {xlsx_path}")
+        print(f"🔄 Converting {xls_path} to {xlsx_path}...")
+
+        # Read .xls file using xlrd
+        xls_book = open_workbook(str(xls_path), formatting_info=True)
+        xls_sheet = xls_book.sheet_by_index(0)
+
+        # Create a new .xlsx workbook
+        xlsx_book = Workbook()
+        xlsx_sheet: Worksheet = xlsx_book.active
+
+        # Copy data from .xls to .xlsx
+        for row in range(xls_sheet.nrows):
+            for col in range(xls_sheet.ncols):
+                xlsx_sheet.cell(row=row + 1, column=col + 1, value=xls_sheet.cell_value(row, col))
+
+        # Preserve merged cells
+        for merged_range in xls_sheet.merged_cells:
+            r1, r2, c1, c2 = merged_range
+            merge_range = f"{get_column_letter(c1 + 1)}{r1 + 1}:{get_column_letter(c2)}{r2}"
+            xlsx_sheet.merge_cells(merge_range)
+
+        # Save new .xlsx file
+        xlsx_book.save(str(xlsx_path))
+        print(f"✅ Successfully converted {xls_path} to {xlsx_path}")
         return xlsx_path
+
     except Exception as e:
         print(f"❌ Error converting {xls_path} to XLSX: {e}")
         traceback.print_exc()
         return None
-
 def authenticate_drive():
     creds = service_account.Credentials.from_service_account_file(
         "Service Account JSON.json", 
@@ -258,7 +291,7 @@ async def automation_function():
 
                 # Download handling
                 excel_locator = page.locator("img[alt='Excel']")
-                if await excel_locator.count() > 0:
+                if await excel_locator.count() > 0: 
                     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                     async with page.expect_download() as download_info:
                         await excel_locator.click()
