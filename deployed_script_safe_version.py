@@ -16,41 +16,42 @@ from openpyxl import Workbook
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.worksheet import Worksheet
 from xlrd import open_workbook
-from pathlib import Path
-import traceback
 import sys
+
 app = Flask(__name__)
 
 # Global control variables
+automation_task = None  # Global reference to the task
 script_running = False
 control_lock = threading.Lock()
 current_status = "Stopped"
 run_hours = (9, 22)  # Start hour, End hour (24h format)
 run_frequency = 60  # Minutes
-script_username = os.getenv("SCRIPT_USERNAME", "Default_USERNAME")
+script_username = os.getenv("SCRIPT_USERNAME", "DEFAULT_USERNAME")
 script_password = os.getenv("SCRIPT_PASSWORD", "DEFAULT_PASSWORD")
-folder_id = 'GOOGLE DRIVE FOLDER ID'
+folder_id = 'FOLDER_ID'
 
-# Existing utility functions
-from openpyxl import Workbook
-from openpyxl.utils import get_column_letter
-from openpyxl.worksheet.worksheet import Worksheet
-from xlrd import open_workbook
-import os
 # Fix Unicode error in Windows terminal
 sys.stdout.reconfigure(encoding='utf-8')
 
+# Create a global asyncio event loop running in a background thread
+loop = asyncio.new_event_loop()
+def run_loop():
+    asyncio.set_event_loop(loop)
+    loop.run_forever()
+loop_thread = threading.Thread(target=run_loop, daemon=True)
+loop_thread.start()
+
+# Utility Functions
 def convert_xls_to_xlsx(xls_path) -> Path:
     """Convert an .xls file to .xlsx format while preserving merged formatting."""
     try:
         xls_path = Path(xls_path)  # Ensure xls_path is a Path object
-
         if not xls_path.exists():
             print(f"❌ File not found: {xls_path}")
             return None  # Avoid processing non-existent file
 
         xlsx_path = xls_path.with_suffix(".xlsx")
-
         print(f"🔄 Converting {xls_path} to {xlsx_path}...")
 
         # Read .xls file using xlrd
@@ -82,10 +83,9 @@ def convert_xls_to_xlsx(xls_path) -> Path:
         traceback.print_exc()
         return None
 
-
 def authenticate_drive():
     creds = service_account.Credentials.from_service_account_file(
-        "SERVICE_ACCOUNT_JSON_FILE.json", 
+        "SERVICE_ACCOUNT_JSON.json", 
         scopes=["https://www.googleapis.com/auth/drive", "https://www.googleapis.com/auth/spreadsheets"]
     )
     return build("drive", "v3", credentials=creds)
@@ -94,10 +94,7 @@ async def upload_to_drive(file_path: Path, folder_id: str):
     """Upload an XLSX file to Google Drive."""
     try:
         drive_service = authenticate_drive()
-        file_metadata = {
-            "name": file_path.name,
-            "parents": [folder_id],
-        }
+        file_metadata = {"name": file_path.name, "parents": [folder_id]}
         media = MediaFileUpload(
             str(file_path), 
             mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -145,7 +142,7 @@ async def automation_function():
             await page.fill('#input36', script_password)
             await page.click('input.button-primary')
             await page.wait_for_load_state('networkidle')
-            time.sleep(5)
+            time.sleep(5)  # Consider replacing with an async sleep if possible
             # Search navigation
             await page.fill('input#PTSKEYWORD', 'Daily Service Wk & Vision IBPR')
             await page.click('#PTSSEARCHBTN')
@@ -200,36 +197,43 @@ async def automation_function():
         finally:
             await browser.close()
 
+# Single automation loop function (with cancellation and frequent checks)
 async def automation_loop():
     global script_running, current_status
+    current_status = "Running"  # Set status right away when the loop starts
     est_tz = pytz.timezone("US/Eastern")
     
-    while script_running:
-        now = datetime.now(est_tz)
-        current_hour = now.hour
-        
-        if run_hours[0] <= current_hour < run_hours[1]:
-            current_status = "Running"
-            print(f"🟢 Running script at {now.strftime('%Y-%m-%d %I:%M %p EST')}")
-            await automation_function()
-            
-            sleep_time = run_frequency * 60
-            print(f"⏳ Next run in {run_frequency} minutes...")
-            for _ in range(sleep_time):
-                if not script_running:
-                    break
-                await asyncio.sleep(1)
-        else:
-            current_status = "Waiting"
-            next_run = now.replace(hour=run_hours[0], minute=0, second=0, microsecond=0)
-            if next_run < now:
-                next_run += timedelta(days=1)
-            sleep_time = (next_run - now).total_seconds()
-            print(f"⏸️ Off-hours! Sleeping until {next_run.strftime('%I:%M %p EST')}")
-            for _ in range(int(sleep_time)):
-                if not script_running:
-                    break
-                await asyncio.sleep(1)
+    try:
+        while script_running:
+            now = datetime.now(est_tz)
+            current_hour = now.hour
+
+            if run_hours[0] <= current_hour < run_hours[1]:
+                current_status = "Running"
+                print(f"🟢 Running script at {now.strftime('%Y-%m-%d %I:%M %p EST')}")
+                await automation_function()
+                
+                sleep_time = run_frequency * 60
+                print(f"⏳ Next run in {run_frequency} minutes...")
+                for _ in range(int(sleep_time * 10)):  # checking every 0.1 seconds
+                    if not script_running:
+                        raise asyncio.CancelledError()
+                    await asyncio.sleep(0.1)
+            else:
+                current_status = "Waiting"
+                next_run = now.replace(hour=run_hours[0], minute=0, second=0, microsecond=0)
+                if next_run < now:
+                    next_run += timedelta(days=1)
+                sleep_time = (next_run - now).total_seconds()
+                print(f"⏸️ Off-hours! Sleeping until {next_run.strftime('%I:%M %p EST')}")
+                for _ in range(int(sleep_time * 10)):
+                    if not script_running:
+                        raise asyncio.CancelledError()
+                    await asyncio.sleep(0.1)
+    except asyncio.CancelledError:
+        print("Automation loop cancelled immediately.")
+        current_status = "Stopped"
+        raise
 
 # Web Interface Endpoints
 @app.route('/')
@@ -248,16 +252,21 @@ def status():
 
 @app.route('/control', methods=['POST'])
 def control():
-    global script_running
+    global script_running, current_status, automation_task
     action = request.json.get('action')
     
     with control_lock:
         if action == 'start' and not script_running:
             script_running = True
-            threading.Thread(target=lambda: asyncio.run(automation_loop())).start()
+            current_status = "Starting"  # Immediately update status
+            # Schedule the automation_loop() on the global event loop
+            automation_task = asyncio.run_coroutine_threadsafe(automation_loop(), loop)
             return jsonify({'status': 'starting'})
         elif action == 'stop' and script_running:
             script_running = False
+            current_status = "Stopped"  # Immediately update status
+            if automation_task:
+                automation_task.cancel()
             return jsonify({'status': 'stopping'})
         return jsonify({'status': 'no change'})
 
