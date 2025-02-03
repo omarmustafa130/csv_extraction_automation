@@ -1,0 +1,173 @@
+<!-- templates/index.html -->
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Automation Control</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
+        .status { padding: 10px; margin: 10px 0; border-radius: 5px; }
+        .running { background: #dff0d8; border: 1px solid #d6e9c6; }
+        .stopped { background: #f2dede; border: 1px solid #ebccd1; }
+        .section { margin: 20px 0; padding: 15px; border: 1px solid #ddd; border-radius: 5px; }
+        input, button, select { margin: 5px; padding: 8px; }
+    </style>
+</head>
+<body>
+    <h1>Automation Control</h1>
+    
+    <div class="section">
+        <h2>Select Script</h2>
+        <select id="scriptSelect" onchange="updateStatus()">
+            <option value="daily_service">Daily Service</option>
+            <option value="pickup_manifest">PickUp Manifest</option>
+        </select>
+        <div id="statusDisplay" class="status"></div>
+        <button onclick="control('start')">Start</button>
+        <button onclick="control('stop')">Stop</button>
+    </div>
+
+    <div class="section">
+        <h2>Settings</h2>
+        <div>
+            <label>Run Hours:</label>
+            <input type="number" id="startHour" min="0" max="23" placeholder="Start">
+            <input type="number" id="endHour" min="0" max="23" placeholder="End">
+            <button onclick="updateHours()">Update Hours</button>
+        </div>
+        
+        <div>
+            <label>Frequency (minutes):</label>
+            <input type="number" id="frequency" min="1" value="60">
+            <button onclick="updateFrequency()">Update Frequency</button>
+        </div>
+
+        <div>
+            <label>Facility Name:</label>
+            <input type="text" id="facilityName">
+            <br><br>
+            <label>Folder ID:</label>
+            <input type="text" id="folderId">
+            <button onclick="updateFacilityFolder()">Update Facility/Folder</button>
+        </div>
+    </div>
+
+    <script>
+        async function updateStatus() {
+            const script = document.getElementById('scriptSelect').value;
+            try {
+                const response = await fetch(`/status?script=${script}`);
+                if (!response.ok) throw new Error('Failed to fetch status');
+                const data = await response.json();
+                // data: { running, status, hours, frequency, facility_name, folder_id }
+
+                const statusDiv = document.getElementById('statusDisplay');
+                const statusClass = data.running ? 'running' : 'stopped';
+                statusDiv.className = `status ${statusClass}`;
+
+                statusDiv.innerHTML = `
+                    <strong>Status:</strong> ${data.status}<br>
+                    <strong>Run Hours:</strong> ${data.hours[0]} - ${data.hours[1]}<br>
+                    <strong>Frequency:</strong> ${data.frequency} min<br>
+                    <strong>Facility:</strong> ${data.facility_name}<br>
+                    <strong>Folder ID:</strong> ${data.folder_id}
+                `;
+
+                // Update input fields so user sees current config
+                document.getElementById('startHour').value = data.hours[0];
+                document.getElementById('endHour').value = data.hours[1];
+                document.getElementById('frequency').value = data.frequency;
+                document.getElementById('facilityName').value = data.facility_name;
+                document.getElementById('folderId').value = data.folder_id;
+
+            } catch (error) {
+                console.error('Error fetching status:', error);
+                const statusDiv = document.getElementById('statusDisplay');
+                statusDiv.className = 'status stopped';
+                statusDiv.innerHTML = 'Error fetching status';
+            }
+        }
+
+        async function control(action) {
+            const script = document.getElementById('scriptSelect').value;
+            try {
+                const response = await fetch(`/control/${script}`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ action })
+                });
+                
+                if (!response.ok) throw new Error('Control action failed');
+                // Refresh status
+                updateStatus();
+            } catch (error) {
+                console.error('Error sending control action:', error);
+            }
+        }
+
+        // For the "Update Hours" button
+        async function updateHours() {
+            const script = document.getElementById('scriptSelect').value;
+            const start_hour = parseInt(document.getElementById('startHour').value, 10);
+            const end_hour = parseInt(document.getElementById('endHour').value, 10);
+
+            try {
+                const response = await fetch(`/update_settings/${script}`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ start_hour, end_hour })
+                });
+
+                if (!response.ok) throw new Error('Failed to update hours');
+                // Refresh status to see new config
+                updateStatus();
+            } catch (error) {
+                console.error('Error updating hours:', error);
+            }
+        }
+
+        // For "Update Frequency" button
+        async function updateFrequency() {
+            const script = document.getElementById('scriptSelect').value;
+            const frequency = parseInt(document.getElementById('frequency').value, 10);
+
+            try {
+                const response = await fetch(`/update_settings/${script}`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ frequency })
+                });
+
+                if (!response.ok) throw new Error('Failed to update frequency');
+                updateStatus();
+            } catch (error) {
+                console.error('Error updating frequency:', error);
+            }
+        }
+
+        // For "Update Facility/Folder" button
+        async function updateFacilityFolder() {
+            const script = document.getElementById('scriptSelect').value;
+            const facility_name = document.getElementById('facilityName').value;
+            const folder_id = document.getElementById('folderId').value;
+
+            try {
+                const response = await fetch(`/update_settings/${script}`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ facility_name, folder_id })
+                });
+
+                if (!response.ok) throw new Error('Failed to update facility/folder');
+                updateStatus();
+            } catch (error) {
+                console.error('Error updating facility/folder:', error);
+            }
+        }
+
+        // On page load, show the status of the default script
+        updateStatus();
+        // Optionally, poll status every 60s
+        setInterval(updateStatus, 60000);
+    </script>
+</body>
+</html>
