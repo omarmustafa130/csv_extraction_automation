@@ -34,7 +34,7 @@ SCRIPT_PASSWORD = os.getenv("SCRIPT_PASSWORD", "PASSWORD")
 
 def authenticate_drive():
     creds = service_account.Credentials.from_service_account_file(
-        "SERVICE_ACCOUNT.json",
+        "SERVICE_ACCOUNT_JSON.json",
         scopes=["https://www.googleapis.com/auth/drive", "https://www.googleapis.com/auth/spreadsheets"]
     )
     return build("drive", "v3", credentials=creds)
@@ -92,12 +92,12 @@ async def run_pickup_iteration():
     new_date = datetime.now(est_tz).strftime("%m/%d/%Y")
 
     async with async_playwright() as p:
-        browser = await p.firefox.launch(headless=True)
+        browser = await p.chromium.launch(headless=True)
         context = await browser.new_context(accept_downloads=True)
         page = await context.new_page()
 
         try:
-            # Login
+
             # Login sequence
             await page.goto("https://mybizaccount.fedex.com/")
             await page.click('input.credentials_input_submit')
@@ -105,6 +105,7 @@ async def run_pickup_iteration():
             await page.fill('#input28', SCRIPT_USERNAME)
             await page.fill('#input36', SCRIPT_PASSWORD)
             await page.click('input.button-primary')
+
             # Wait for 'domcontentloaded'
             await page.wait_for_load_state('domcontentloaded', timeout=60000)
             time.sleep(5)  # Consider replacing with an async sleep if possible
@@ -116,12 +117,13 @@ async def run_pickup_iteration():
             await page.wait_for_load_state('networkidle')
 
             # P&D Manifest
+            time.sleep(10)
             await page.wait_for_selector('#mainTabSettab_1', timeout=60000)
             await page.click('#mainTabSettab_1')
-            await asyncio.sleep(15)
+            time.sleep(15)
             await page.fill('#manifestForm\\:date_input', new_date)
             await page.click('#manifestForm\\:search')
-            await asyncio.sleep(7)
+            await asyncio.sleep(15)
 
             # Download
             async with page.expect_download() as dl_info:
@@ -129,7 +131,7 @@ async def run_pickup_iteration():
             dl = await dl_info.value
 
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            local_xls = Path.cwd() / f"{FACILITY_NAME}_{timestamp}.xls"
+            local_xls = Path.cwd() / f"{timestamp}_{FACILITY_NAME}.xls"
             await dl.save_as(local_xls)
             print(f"[Pickup] Downloaded: {local_xls}")
 
@@ -137,6 +139,10 @@ async def run_pickup_iteration():
             xlsx_file = convert_xls_to_xlsx(local_xls)
             if xlsx_file:
                 await upload_to_drive(xlsx_file, FOLDER_ID)
+                if local_xls and local_xls.exists():
+                    local_xls.unlink()
+                if xlsx_file and xlsx_file.exists():
+                    xlsx_file.unlink()
 
         finally:
             await browser.close()
