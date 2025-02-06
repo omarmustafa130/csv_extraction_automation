@@ -28,8 +28,8 @@ FACILITY_NAME = os.getenv("FACILITY_NAME", "DailyService")
 FOLDER_ID = os.getenv("FOLDER_ID", "FOLDER_ID")
 
 # Hard-coded credentials (or read from env if you prefer)
-SCRIPT_USERNAME = os.getenv("SCRIPT_USERNAME", "USERNAME")
-SCRIPT_PASSWORD = os.getenv("SCRIPT_PASSWORD", "PASSWORD")
+SCRIPT_USERNAME = os.getenv("SCRIPT_USERNAME", "SCRIPT_USERNAME")
+SCRIPT_PASSWORD = os.getenv("SCRIPT_PASSWORD", "SCRIPT_PASSWORD")
 
 
 FACILITIES = [
@@ -99,31 +99,34 @@ async def run_daily_iteration():
     new_date = datetime.now(est_tz).strftime("%m/%d/%Y")
 
     async with async_playwright() as p:
-        browser = await p.firefox.launch(headless=True)
+        browser = await p.chromium.launch(headless=True)
         context = await browser.new_context(accept_downloads=True)
         page = await context.new_page()
 
         try:
             # Login sequence
             await page.goto("https://mybizaccount.fedex.com/")
+            time.sleep(5)
             await page.click('input.credentials_input_submit')
+            time.sleep(5)
             await page.wait_for_selector('#input28')
             await page.fill('#input28', SCRIPT_USERNAME)
             await page.fill('#input36', SCRIPT_PASSWORD)
             await page.click('input.button-primary')
             # Wait for 'domcontentloaded'
             await page.wait_for_load_state('domcontentloaded', timeout=60000)
-            time.sleep(5)  # Consider replacing with an async sleep if possible
+            time.sleep(10)  # Consider replacing with an async sleep if possible
             # Search navigation
             await page.fill('input#PTSKEYWORD', 'Daily Service Wk & Vision IBPR')
             await page.click('#PTSSEARCHBTN')
             await page.wait_for_load_state('networkidle')
+            time.sleep(5)
             await page.keyboard.press("Enter")
             await page.wait_for_load_state('networkidle')
-
+            time.sleep(5)
             # Set the date
             await page.fill('div#dateTimePicker1 input', new_date)
-
+            time.sleep(15)
             # For each facility
             for fac in FACILITIES:
                 fac_name = fac["name"]
@@ -153,12 +156,17 @@ async def run_daily_iteration():
 
                         # Convert and upload
                         xlsx_path = convert_xls_to_xlsx(local_xls)
-                        if xlsx_path:
-                            await upload_to_drive(xlsx_path, FOLDER_ID)
+                        if xlsx_path and xlsx_path.exists():
+                            # Ensure the original XLS file is deleted before uploading
                             if local_xls and local_xls.exists():
                                 local_xls.unlink()
-                            if xlsx_path and xlsx_path.exists():
-                                xlsx_path.unlink()
+                                print(f"[Daily] 🗑 Deleted original XLS: {local_xls}")
+
+                            # Now upload only the XLSX file
+                            await upload_to_drive(xlsx_path, FOLDER_ID)
+                            xlsx_path.unlink()
+                            print(f"[Daily] 🗑 Deleted uploaded XLSX: {xlsx_path}")
+
                     else:
                         print(f"[Daily] No Excel icon found for {fac_name}")
 
