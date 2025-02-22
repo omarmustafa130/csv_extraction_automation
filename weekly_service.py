@@ -24,8 +24,8 @@ SCRIPT_PASSWORD = os.getenv("SCRIPT_PASSWORD", "PASSWORD")
 SCHEDULE_RUN = int(os.getenv("SCHEDULE_RUN", "1"))  # 1 = Scheduled, 0 = Force Run Now
 
 FACILITIES = [
-    {"name": "ZNHI-250/3250", "steps": []},
-    {"name": "ZECA-278",      "steps": ["Tab", "Enter", "ArrowUp", "Enter"]},
+    {"name": "ZECA-278", "steps": []},
+    {"name": "ZNHI-250/3250",      "steps": ["Tab", "Enter", "ArrowUp", "Enter"]},
     {"name": "ZWLN-256/3256", "steps": ["Tab", "Enter", "ArrowDown", "ArrowDown", "Enter"]},
 ]
 
