@@ -18,20 +18,21 @@ from googleapiclient.http import MediaFileUpload
 sys.stdout.reconfigure(encoding='utf-8')
 
 # Load configuration from environment
-FOLDER_ID = os.getenv("FOLDER_ID", "FOLDER_ID")
-SCRIPT_USERNAME = os.getenv("SCRIPT_USERNAME", "USERNAME")
-SCRIPT_PASSWORD = os.getenv("SCRIPT_PASSWORD", "PASSWORD")
+FOLDER_ID = os.getenv("FOLDER_ID", "NONE")
+
+SCRIPT_USERNAME = os.getenv("SCRIPT_USERNAME", "DEFAULT-USERNAME")
+SCRIPT_PASSWORD = os.getenv("SCRIPT_PASSWORD", "DEFAULT-PASSWORD")
 SCHEDULE_RUN = int(os.getenv("SCHEDULE_RUN", "1"))  # 1 = Scheduled, 0 = Force Run Now
 
 FACILITIES = [
     {"name": "ZECA-278", "steps": []},
-    {"name": "ZNHI-250/3250",      "steps": ["Tab", "Enter", "ArrowUp", "Enter"]},
+    {"name": "ZNHI-250/3250",      "steps": ["Tab", "Enter", "ArrowDown", "Enter"]},
     {"name": "ZWLN-256/3256", "steps": ["Tab", "Enter", "ArrowDown", "ArrowDown", "Enter"]},
 ]
 
 def authenticate_drive():
     creds = service_account.Credentials.from_service_account_file(
-        "SERVICE_ACCOUNT_JSON.json",
+        "SERVICE-JSON.json",
         scopes=["https://www.googleapis.com/auth/drive", "https://www.googleapis.com/auth/spreadsheets"]
     )
     return build("drive", "v3", credentials=creds)

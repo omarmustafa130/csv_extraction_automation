@@ -26,15 +26,15 @@ START_HOUR = int(os.getenv("START_HOUR", "8"))
 END_HOUR = int(os.getenv("END_HOUR", "23"))
 FREQUENCY_MINUTES = int(os.getenv("FREQUENCY", "120"))
 FACILITY_NAME = os.getenv("FACILITY_NAME", "PickUpManifest")
-FOLDER_ID = os.getenv("FOLDER_ID", "FOLDER_ID")
+FOLDER_ID = os.getenv("FOLDER_ID", "NONE")
 
-SCRIPT_USERNAME = os.getenv("SCRIPT_USERNAME", "USERNAME")
-SCRIPT_PASSWORD = os.getenv("SCRIPT_PASSWORD", "PASSWORD")
+SCRIPT_USERNAME = os.getenv("SCRIPT_USERNAME", "DEFAULT-USERNAME")
+SCRIPT_PASSWORD = os.getenv("SCRIPT_PASSWORD", "DEFAULT-PASSWORD")
 
 
 def authenticate_drive():
     creds = service_account.Credentials.from_service_account_file(
-        "SERVICE_ACCOUNT_JSON.json",
+        "SERVICE-JSON.json",
         scopes=["https://www.googleapis.com/auth/drive", "https://www.googleapis.com/auth/spreadsheets"]
     )
     return build("drive", "v3", credentials=creds)

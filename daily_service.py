@@ -25,22 +25,22 @@ START_HOUR = int(os.getenv("START_HOUR", "9"))
 END_HOUR = int(os.getenv("END_HOUR", "22"))
 FREQUENCY_MINUTES = int(os.getenv("FREQUENCY", "60"))
 FACILITY_NAME = os.getenv("FACILITY_NAME", "DailyService")
-FOLDER_ID = os.getenv("FOLDER_ID", "FOLDER_ID")
+FOLDER_ID = os.getenv("FOLDER_ID", "NONE")
 
 # Hard-coded credentials (or read from env if you prefer)
-SCRIPT_USERNAME = os.getenv("SCRIPT_USERNAME", "SCRIPT_USERNAME")
-SCRIPT_PASSWORD = os.getenv("SCRIPT_PASSWORD", "SCRIPT_PASSWORD")
+SCRIPT_USERNAME = os.getenv("SCRIPT_USERNAME", "DEFAULT-USERNAME")
+SCRIPT_PASSWORD = os.getenv("SCRIPT_PASSWORD", "DEFAULT-PASSWORD")
 
 
 FACILITIES = [
     {"name": "ZECA-278", "steps": []},
-    {"name": "ZNHI-250/3250",      "steps": ["Tab", "Enter", "ArrowUp", "Enter"]},
+    {"name": "ZNHI-250/3250",      "steps": ["Tab", "Enter", "ArrowDown", "Enter"]},
     {"name": "ZWLN-256/3256", "steps": ["Tab", "Enter", "ArrowDown", "ArrowDown", "Enter"]},
 ]
 
 def authenticate_drive():
     creds = service_account.Credentials.from_service_account_file(
-        "SERVICE_ACCOUNT_JSON.json",
+        "SERVICE-JSON.json",
         scopes=["https://www.googleapis.com/auth/drive", "https://www.googleapis.com/auth/spreadsheets"]
     )
     return build("drive", "v3", credentials=creds)
@@ -115,9 +115,12 @@ async def run_daily_iteration():
             await page.click('input.button-primary')
             # Wait for 'domcontentloaded'
             await page.wait_for_load_state('domcontentloaded', timeout=60000)
-            time.sleep(10)  # Consider replacing with an async sleep if possible
+            await page.wait_for_load_state('networkidle', timeout=60000)
+            time.sleep(20)  # Consider replacing with an async sleep if possible
             # Search navigation
-            await page.fill('input#PTSKEYWORD', 'Daily Service Wk & Vision IBPR')
+            page.wait_for_function("document.readyState === 'complete'")
+
+            await page.fill('input#PTSKEYWORD', 'Daily Service Wk & Vision IBPR', timeout=60000)
             await page.click('#PTSSEARCHBTN')
             await page.wait_for_load_state('networkidle')
             time.sleep(5)

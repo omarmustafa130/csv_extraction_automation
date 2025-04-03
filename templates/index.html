@@ -36,16 +36,16 @@
         <button onclick="updateSchedule()">Update Schedule</button>
     </div>
 
-    <div class="section" id="settingsSection">
+    <div class="section" id="settingsSection" style="display:none;">
         <h2>Settings</h2>
-        <div id="runHoursSection">
+        <div id="runHoursSection" style="display:none;">
             <label>Run Hours:</label>
             <input type="number" id="startHour" min="0" max="23" placeholder="Start Hour">
             <input type="number" id="endHour" min="0" max="23" placeholder="End Hour">
             <button onclick="updateHours()">Update Hours</button>
         </div>
         
-        <div id="frequencySection">
+        <div id="frequencySection" style="display:none;">
             <label>Frequency (minutes):</label>
             <input type="number" id="frequency" min="1" value="60">
             <button onclick="updateFrequency()">Update Frequency</button>
@@ -63,71 +63,105 @@
 
     <div class="section">
         <h2>Credentials</h2>
-        <div>
-            <label>Username:</label>
-            <input type="text" id="username">
-            <br><br>
-            <label>Password:</label>
-            <input type="password" id="password">
-            <button onclick="updateCredentials()">Update Credentials</button>
-        </div>
+        <form id="credentialsForm">
+            <div>
+                <label>Username:</label>
+                <input type="text" id="username" required>
+                <br><br>
+                <label>Password:</label>
+                <input type="password" id="password" required>
+                <button id="updateCredentialsBtn" type="submit">Update Credentials</button>
+            </div>
+        </form>
     </div>
 
     <script>
+        // ----------------------------------------------------------------------------
+        // 1) Helper to format timestamps or "Never" if null/undefined
+        // ----------------------------------------------------------------------------
+        function formatTimestamp(isoString) {
+            return isoString ? new Date(isoString).toLocaleString() : 'Never';
+        }
+
+        // ----------------------------------------------------------------------------
+        // 2) The original updateStatus() function you provided
+        // ----------------------------------------------------------------------------
         async function updateStatus() {
             const script = document.getElementById('scriptSelect').value;
+
+            // Show/hide weekly_service or daily/pickup settings
             document.getElementById('scheduleSection').style.display = script === 'weekly_service' ? 'block' : 'none';
             document.getElementById('settingsSection').style.display = script !== 'weekly_service' ? 'block' : 'none';
             document.getElementById('runHoursSection').style.display = script !== 'weekly_service' ? 'block' : 'none';
             document.getElementById('frequencySection').style.display = script !== 'weekly_service' ? 'block' : 'none';
 
             try {
+                // Fetch status for this specific script
                 const response = await fetch(`/status?script=${script}`);
                 if (!response.ok) throw new Error('Failed to fetch status');
                 const data = await response.json();
 
+                // Update status display
                 const statusDiv = document.getElementById('statusDisplay');
                 const statusClass = data.running ? 'running' : 'stopped';
                 statusDiv.className = `status ${statusClass}`;
 
-                let statusHTML = `<strong>Status:</strong> ${data.status}<br>
-                                <strong>Folder ID:</strong> ${data.folder_id}<br>
-                                <strong>Username:</strong> ${data.username}<br>`;
+                // Base details
+                let statusHTML = `
+                    <strong>Status:</strong> ${data.status}<br>
+                    <strong>Folder ID:</strong> ${data.folder_id}<br>
+                    <strong>Username:</strong> ${data.username}<br>
+                `;
 
+                // Weekly service logic
                 if (script === 'weekly_service') {
                     const scheduleText = data.schedule_run == 1 ? "Scheduled (Fridays 10PM)" : "Force Run Now";
                     statusHTML += `<strong>Run Mode:</strong> ${scheduleText}<br>`;
                     document.getElementById('scheduleRun').value = data.schedule_run;
 
-                    // ✅ If it's Friday 10PM and scheduled run is selected, show as Running
+                    // If it's Friday 10PM and scheduled run is selected, show "Running"
                     const now = new Date();
                     if (now.getDay() === 5 && now.getHours() === 22 && data.schedule_run == 1) {
-                        statusDiv.className = `status running`;
+                        statusDiv.className = 'status running';
                         statusHTML = `<strong>Status:</strong> Running (Scheduled)<br>` + statusHTML;
                     }
-                } else {
-                    statusHTML += `<strong>Run Hours:</strong> ${data.hours[0]} - ${data.hours[1]}<br>
-                                <strong>Frequency:</strong> ${data.frequency} min<br>`;
 
+                } else {
+                    // Daily/Pickup logic
+                    statusHTML += `
+                        <strong>Run Hours:</strong> ${data.hours[0]} - ${data.hours[1]}<br>
+                        <strong>Frequency:</strong> ${data.frequency} min<br>
+                    `;
                     document.getElementById('startHour').value = data.hours[0];
                     document.getElementById('endHour').value = data.hours[1];
                     document.getElementById('frequency').value = data.frequency;
                 }
 
+                // Show last-updated fields
+                statusHTML += `
+                    <strong>Folder ID:</strong> ${data.folder_id} (Last updated: ${formatTimestamp(data.folder_id_updated)})<br>
+                    <strong>Username:</strong> ${data.username} (Last updated: ${formatTimestamp(data.username_updated)})<br>
+                    <strong>Password:</strong> ****** (Last updated: ${formatTimestamp(data.password_updated)})<br>
+                `;
+
                 statusDiv.innerHTML = statusHTML;
 
+                // Populate inputs
                 document.getElementById('folderId').value = data.folder_id;
                 document.getElementById('username').value = data.username;
                 document.getElementById('password').value = '';
+
             } catch (error) {
                 console.error('Error fetching status:', error);
-                document.getElementById('statusDisplay').className = 'status stopped';
-                document.getElementById('statusDisplay').innerHTML = 'Error fetching status';
+                const statusDiv = document.getElementById('statusDisplay');
+                statusDiv.className = 'status stopped';
+                statusDiv.innerHTML = 'Error fetching status';
             }
         }
 
-
-
+        // ----------------------------------------------------------------------------
+        // 3) Start/Stop Control
+        // ----------------------------------------------------------------------------
         async function control(action) {
             const script = document.getElementById('scriptSelect').value;
             try {
@@ -139,14 +173,15 @@
                 if (!response.ok) throw new Error("Failed to execute control action");
 
                 console.log(`[INFO] ${action} command sent for ${script}`);
-
-                // ✅ Refresh UI instantly instead of waiting 3s
-                updateStatus();
+                updateStatus(); // Refresh immediately
             } catch (error) {
                 console.error("Error sending control action:", error);
             }
         }
 
+        // ----------------------------------------------------------------------------
+        // 4) Updating Settings (hours, frequency, folder ID)
+        // ----------------------------------------------------------------------------
         async function updateSetting(data) {
             const script = document.getElementById('scriptSelect').value;
             try {
@@ -155,16 +190,12 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(data)
                 });
-
                 console.log("[INFO] Settings updated. Refreshing UI...");
-
-                // ✅ Refresh UI immediately
                 updateStatus();
             } catch (error) {
                 console.error('Error updating settings:', error);
             }
         }
-
 
         async function updateHours() {
             updateSetting({
@@ -185,6 +216,9 @@
             });
         }
 
+        // ----------------------------------------------------------------------------
+        // 5) Weekly Service schedule_run updates
+        // ----------------------------------------------------------------------------
         async function updateSchedule() {
             const schedule_run = document.getElementById('scheduleRun').value;
             try {
@@ -193,17 +227,56 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ schedule_run })
                 });
-
                 console.log("[INFO] Schedule updated. Refreshing status...");
-
-                // ✅ Refresh UI instantly
                 updateStatus();
             } catch (error) {
                 console.error('Error updating schedule:', error);
             }
         }
 
+        // ----------------------------------------------------------------------------
+        // 6) Credentials update
+        // ----------------------------------------------------------------------------
+        async function updateCredentials(e) {
+            e.preventDefault();  // Prevent full page reload
+            const script = document.getElementById('scriptSelect').value;
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
 
+            if (!username || !password) {
+                alert("Please enter both username and password");
+                return;
+            }
+
+            try {
+                const response = await fetch(`/update_credentials/${script}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, password })
+                });
+
+                if (!response.ok) {
+                    const error = await response.text();
+                    throw new Error(error);
+                }
+
+                const result = await response.json();
+                console.log("Update successful:", result);
+                document.getElementById('password').value = '';
+                alert("Credentials updated successfully!");
+                updateStatus(); // Refresh UI after updating
+            } catch (error) {
+                console.error('Update failed:', error);
+                alert('Failed to update credentials: ' + error.message);
+            }
+        }
+
+        // ----------------------------------------------------------------------------
+        // 7) Hook up the credentials form submission & auto-refresh
+        // ----------------------------------------------------------------------------
+        document.getElementById('credentialsForm').addEventListener('submit', updateCredentials);
+
+        // Load initial status & refresh every 60 seconds
         updateStatus();
         setInterval(updateStatus, 60000);
     </script>
